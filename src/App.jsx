@@ -129,7 +129,7 @@ export default function App() {
   const [expandedPhases,setExpandedPhases]=useState({})
   const [expandedEvents,setExpandedEvents]=useState({})
 
-  function blank(){return{name:"",category:"",startDate:"",endDate:"",goLiveDate:"",type:"",venue:"",status:"Confirmed",salesLead:"Neshah (NSH)",marketingLead:"Tania (TD)",heroOffer:"",vendors:"",notes:"",objective:"",audience:"",sellingPoint:"",cta:"",leadDest:"",bookingDeadline:""}}
+  function blank(){return{name:"",category:"",startDate:"",endDate:"",goLiveDate:"",venue:"",status:"Confirmed",salesLead:"Neshah (NSH)",marketingLead:"Tania (TD)",heroOffer:"",vendors:"",notes:"",objective:"",audience:"",sellingPoint:"",cta:"",leadDest:"",bookingDeadline:""}}
 
   useEffect(()=>{
     (async()=>{
