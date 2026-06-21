@@ -27,7 +27,7 @@ export const CATEGORIES = [
   { key:"promo",    label:"Promo / Flash Sale",    desc:"2–3 week burst (National Day, 11.11, 12.12, deposit drives)" },
   { key:"campaign", label:"Lead-Gen Campaign",     desc:"4-week content-led (engagement, New Year)" },
   { key:"nurture",  label:"Nurture (no promo)",    desc:"Organic + EDM only (Ramadan)" },
-  { key:"launch",   label:"Brand Launch",          desc:"With partner-approval gates (yuu launch)" },
+  { key:"launch",   label:"Partnership / Vendor Launch", desc:"yuu launch, new vendor partnerships & vendor features/spotlights — with partner approval & cross-promotion" },
 ]
 
 // ─── SHOWCASE TASKS (full 8-week plan) ───────────────────────────────────────
