@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { createClient } from '@supabase/supabase-js'
-import { OBJECTIVES, LEAD_TIMES, TASKS, COLLATERAL_ITEMS } from './data'
+import { OBJECTIVES, LEAD_TIMES, CATEGORIES, getTasks, getCollateral } from './data'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -25,6 +25,7 @@ const STATUS_COL = {
   "Done":"bg-green-100 text-green-800",      "Blocked":"bg-red-100 text-red-800",
   "Urgent":"bg-orange-100 text-orange-800",  "N/A":"bg-gray-50 text-gray-400",
 }
+const catLabel = k => (CATEGORIES.find(c => c.key === k)?.label) || "Showcase (default)"
 
 function addDays(iso, n) { if (!iso) return null; const d = new Date(iso); d.setDate(d.getDate()+n); return d }
 function fmtDate(d) { if (!d) return "—"; if (typeof d==="string") d=new Date(d); return d.toLocaleDateString("en-SG",{day:"numeric",month:"short",year:"numeric"}) }
@@ -128,7 +129,7 @@ export default function App() {
   const [expandedPhases,setExpandedPhases]=useState({})
   const [expandedEvents,setExpandedEvents]=useState({})
 
-  function blank(){return{name:"",startDate:"",endDate:"",goLiveDate:"",type:"",venue:"",status:"Confirmed",salesLead:"Neshah (NSH)",marketingLead:"Tania (TD)",heroOffer:"",vendors:"",notes:"",objective:"",audience:"",sellingPoint:"",cta:"",leadDest:"",bookingDeadline:""}}
+  function blank(){return{name:"",category:"",startDate:"",endDate:"",goLiveDate:"",type:"",venue:"",status:"Confirmed",salesLead:"Neshah (NSH)",marketingLead:"Tania (TD)",heroOffer:"",vendors:"",notes:"",objective:"",audience:"",sellingPoint:"",cta:"",leadDest:"",bookingDeadline:""}}
 
   useEffect(()=>{
     (async()=>{
@@ -152,7 +153,7 @@ export default function App() {
   const openAdd=()=>{setForm(blank());setEditEvt(null);setAddOpen(true)}
   const openEdit=ev=>{setForm({...blank(),...ev});setEditEvt(ev.id);setAddOpen(true)}
   const saveEvent=()=>{
-    if(!form.name||!form.startDate) return
+    if(!form.name||!form.startDate||!form.category) return
     const e={...form,id:editEvt||Date.now().toString(),endDate:form.endDate||form.startDate}
     setEvents(p=>editEvt?p.map(x=>x.id===editEvt?e:x):[...p,e]);setAddOpen(false)
   }
@@ -178,12 +179,11 @@ export default function App() {
 
   if(!loaded) return <div className="min-h-screen flex items-center justify-center text-gray-500 text-sm">Loading tracker…</div>
 
-  const tasksByPhase={}
-  TASKS.forEach((t,i)=>{(tasksByPhase[t.phase]=tasksByPhase[t.phase]||[]).push({...t,idx:i})})
+  const totalTasks = events.reduce((s,ev)=>s+getTasks(ev.category).length,0)
 
   const TABS=[{id:"events",label:"📋 Event Master"},{id:"brief",label:"📣 Brief & Planner"},{id:"timeline",label:"📅 Timeline"},{id:"collateral",label:"🎨 Collateral & Creative"}]
-  const FORM_FIELDS=[["Event Name *","name","text","e.g. The Wedding Upmarket @ Suntec"],["Start / Event Date *","startDate","date",""],["End Date","endDate","date","Same as start for single-day"],["Campaign Go-Live Date","goLiveDate","date","Auto-recommended as 4 weeks before event"],["Type","type","text","e.g. Wedding Showcase / Open House"],["Venue / Hall","venue","text","e.g. Royal Hall, Bukit Timah"],["Sales Lead","salesLead","text","e.g. Neshah (NSH)"],["Marketing Lead","marketingLead","text","e.g. Tania (TD)"],["Hero Offer / Showcase Perk","heroOffer","text","e.g. Complimentary tasting for bookings signed at event"],["Partner Vendors","vendors","text","e.g. florist, media team, bridal partners"]]
-  const BRIEF_FIELDS=[["Target Audience","audience","e.g. Newly engaged Muslim couples planning 2026–27"],["Main Selling Point","sellingPoint","e.g. All-inclusive halal package, venue + catering + décor"],["Call-to-Action","cta","e.g. RSVP for the showcase / WhatsApp to enquire"],["Lead Destination","leadDest","e.g. Meta lead form → GHL / WhatsApp / RSVP landing page"],["Booking Deadline / Validity","bookingDeadline","e.g. Event-only perk; deposit by 31 Aug 2026"]]
+  const FORM_FIELDS=[["Event Name *","name","text","e.g. The Wedding Upmarket @ Suntec"],["Start / Event Date *","startDate","date",""],["End Date","endDate","date","Same as start for single-day"],["Campaign Go-Live Date","goLiveDate","date","Auto-recommended as 4 weeks before event"],["Type","type","text","e.g. Wedding Showcase / Open House"],["Venue / Hall","venue","text","e.g. Royal Hall, Bukit Timah"],["Sales Lead","salesLead","text","e.g. Neshah (NSH)"],["Marketing Lead","marketingLead","text","e.g. Tania (TD)"],["Hero Offer / Showcase Perk","heroOffer","text","e.g. Free décor upgrade + bonus yuu Points"],["Partner Vendors","vendors","text","e.g. florist, media team, bridal partners"]]
+  const BRIEF_FIELDS=[["Target Audience","audience","e.g. Newly engaged Muslim couples planning 2027"],["Main Selling Point","sellingPoint","e.g. All-inclusive halal package, venue + catering + décor"],["Call-to-Action","cta","e.g. RSVP for the showcase / WhatsApp to enquire"],["Lead Destination","leadDest","e.g. Meta lead form → GHL / WhatsApp / RSVP landing page"],["Booking Deadline / Validity","bookingDeadline","e.g. Event-only perk; deposit by 31 Aug 2026"]]
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-sm">
@@ -191,7 +191,7 @@ export default function App() {
         <div><div className="text-xs text-blue-300 font-medium tracking-wide">LAGUN SARI WEDDINGS & EVENTS</div><div className="text-lg font-bold">✿ Showcase & Events Tracker</div></div>
         <div className="flex items-center gap-3">
           <span className={`text-xs px-2 py-1 rounded-full ${saving?"bg-amber-500":"bg-green-600"}`}>{saving?"Saving…":"✓ Saved"}</span>
-          <span className="text-xs bg-blue-700 px-2 py-1 rounded">{events.length} event{events.length!==1?"s":""} · {events.length*TASKS.length} tasks tracked</span>
+          <span className="text-xs bg-blue-700 px-2 py-1 rounded">{events.length} event{events.length!==1?"s":""} · {totalTasks} tasks tracked</span>
         </div>
       </div>
       <div className="bg-blue-800 text-white px-6 py-2 flex flex-wrap gap-4 text-xs">
@@ -208,21 +208,23 @@ export default function App() {
         {tab==="events"&&(
           <div>
             <div className="flex items-center justify-between mb-4">
-              <div><h2 className="text-lg font-bold text-blue-900">Event Master List</h2><p className="text-xs text-gray-500 mt-0.5">Add events here → every other tab auto-updates</p></div>
+              <div><h2 className="text-lg font-bold text-blue-900">Event Master List</h2><p className="text-xs text-gray-500 mt-0.5">Each event's category sets its own timeline & collateral checklist</p></div>
               <button onClick={openAdd} className="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-800">+ Add New Event</button>
             </div>
             {events.length===0&&<div className="bg-amber-50 border border-amber-300 rounded-lg p-8 text-center"><div className="text-3xl mb-2">✿</div><div className="font-semibold text-amber-800">No events yet</div><div className="text-sm text-amber-600 mt-1">Click 'Add New Event' to get started.</div></div>}
             <div className="space-y-3">
               {events.map((ev,i)=>{
                 const hasBrief=ev.objective||ev.audience||ev.sellingPoint||ev.cta||ev.leadDest
-                const done=TASKS.filter((_,idx)=>taskStatus[`${ev.id}-${idx}`]==="Done").length
-                const pct=Math.round((done/TASKS.length)*100)
+                const tasks=getTasks(ev.category)
+                const done=tasks.filter((_,idx)=>taskStatus[`${ev.id}-${idx}`]==="Done").length
+                const pct=tasks.length?Math.round((done/tasks.length)*100):0
                 return(
                   <div key={ev.id} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                     <div className="bg-blue-900 text-white px-4 py-3 flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs bg-blue-700 rounded px-2 py-0.5">Event {i+1}</span>
                         <span className="font-bold text-base">{ev.name}</span>
+                        <span className="text-xs bg-indigo-600 px-2 py-0.5 rounded">{catLabel(ev.category)}</span>
                         <span className="text-blue-300 text-xs">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span>
                         {ev.goLiveDate&&<span className="text-xs bg-blue-700 px-2 py-0.5 rounded">Go-live: {fmtDate(ev.goLiveDate)}</span>}
                       </div>
@@ -245,7 +247,7 @@ export default function App() {
                       <div><span className="font-semibold text-teal-800">Lead destination:</span> {ev.leadDest||"—"}</div>
                     </div></div>}
                     <div className="px-4 pb-3">
-                      <div className="flex items-center justify-between text-xs text-gray-500 mb-1"><span>Timeline progress</span><span>{done}/{TASKS.length} tasks done</span></div>
+                      <div className="flex items-center justify-between text-xs text-gray-500 mb-1"><span>Timeline progress</span><span>{done}/{tasks.length} tasks done</span></div>
                       <div className="h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-green-500 rounded-full transition-all" style={{width:`${pct}%`}}/></div>
                     </div>
                   </div>
@@ -260,6 +262,17 @@ export default function App() {
                     <button onClick={()=>setAddOpen(false)} className="text-blue-300 hover:text-white text-xl">✕</button>
                   </div>
                   <div className="p-6 space-y-4">
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                      <label className="block text-xs font-bold text-indigo-900 mb-1">Event Category * — sets the timeline & collateral checklist</label>
+                      <select value={form.category||""} onChange={e=>setForm(p=>({...p,category:e.target.value}))}
+                        className="w-full border border-indigo-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="">Select a category…</option>
+                        {CATEGORIES.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}
+                      </select>
+                      {form.category
+                        ? <div className="text-xs text-indigo-700 mt-1">{CATEGORIES.find(c=>c.key===form.category)?.desc}</div>
+                        : <div className="text-xs text-amber-700 mt-1">⚠️ Choose a category to load the right checklist before saving.</div>}
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {FORM_FIELDS.map(([label,field,type,placeholder])=>(
                         <div key={field} className={field==="vendors"||field==="heroOffer"?"md:col-span-2":""}>
@@ -303,9 +316,10 @@ export default function App() {
                       <label className="block text-xs font-semibold text-gray-600 mb-1">Key Notes</label>
                       <textarea value={form.notes||""} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} placeholder="Any additional notes…" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm h-20 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"/>
                     </div>
-                    <div className="flex gap-3 pt-2">
-                      <button onClick={saveEvent} disabled={!form.name||!form.startDate} className="bg-blue-900 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed">{editEvt?"Save Changes":"Add Event"}</button>
+                    <div className="flex gap-3 pt-2 items-center">
+                      <button onClick={saveEvent} disabled={!form.name||!form.startDate||!form.category} className="bg-blue-900 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed">{editEvt?"Save Changes":"Add Event"}</button>
                       <button onClick={()=>setAddOpen(false)} className="border border-gray-300 text-gray-600 px-6 py-2 rounded-lg hover:bg-gray-50">Cancel</button>
+                      {(!form.name||!form.startDate||!form.category)&&<span className="text-xs text-amber-600">Name, date & category are required</span>}
                     </div>
                   </div>
                 </div>
@@ -330,7 +344,7 @@ export default function App() {
               return(
                 <div key={ev.id} className="mb-6 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                   <button onClick={()=>togEv(evKey)} className="w-full bg-indigo-900 text-white px-5 py-4 flex items-center justify-between hover:bg-indigo-800">
-                    <div className="flex items-center gap-3 flex-wrap"><span className="text-xs bg-indigo-700 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold">{ev.name}</span><span className="text-indigo-300 text-sm">{ev.startDate?fmtDate(ev.startDate):"Date not set"}</span></div>
+                    <div className="flex items-center gap-3 flex-wrap"><span className="text-xs bg-indigo-700 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold">{ev.name}</span><span className="text-xs bg-indigo-600 px-2 py-0.5 rounded">{catLabel(ev.category)}</span><span className="text-indigo-300 text-sm">{ev.startDate?fmtDate(ev.startDate):"Date not set"}</span></div>
                     <div className="flex items-center gap-3">
                       {ebFeas?<span className={`text-xs px-2 py-1 rounded-full ${ebFeas.cls}`}>Brief by {fmtDate(earliestBrief)}</span>:<span className="text-xs px-2 py-1 rounded-full bg-gray-200 text-gray-500">Set a date</span>}
                       <span className="text-indigo-300">{isExp?"▲":"▼"}</span>
@@ -380,16 +394,19 @@ export default function App() {
         {/* TIMELINE */}
         {tab==="timeline"&&(
           <div>
-            <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Combined Marketing & Sales Timeline</h2><p className="text-xs text-gray-500">{TASKS.length} tasks per event across 8 phases.</p></div>
+            <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Combined Marketing & Sales Timeline</h2><p className="text-xs text-gray-500">Each event shows the timeline for its category.</p></div>
             {events.length===0&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center text-gray-500">No events yet — add one in the Event Master tab.</div>}
             {events.map((ev,ei)=>{
               const evKey=`evt-${ev.id}`, isExp=expandedEvents[evKey]!==false
-              const done=TASKS.filter((_,idx)=>taskStatus[`${ev.id}-${idx}`]==="Done").length
+              const tasks=getTasks(ev.category)
+              const tasksByPhase={}
+              tasks.forEach((t,i)=>{(tasksByPhase[t.phase]=tasksByPhase[t.phase]||[]).push({...t,idx:i})})
+              const done=tasks.filter((_,idx)=>taskStatus[`${ev.id}-${idx}`]==="Done").length
               return(
                 <div key={ev.id} className="mb-6 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                   <button onClick={()=>togEv(evKey)} className="w-full bg-blue-900 text-white px-5 py-4 flex items-center justify-between hover:bg-blue-800">
-                    <div className="flex items-center gap-3"><span className="text-xs bg-blue-700 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold text-base">{ev.name}</span><span className="text-blue-300 text-sm">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span></div>
-                    <div className="flex items-center gap-3"><span className="text-xs bg-green-600 px-2 py-1 rounded-full">{done}/{TASKS.length} done</span><span className="text-blue-300">{isExp?"▲":"▼"}</span></div>
+                    <div className="flex items-center gap-3 flex-wrap"><span className="text-xs bg-blue-700 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold text-base">{ev.name}</span><span className="text-xs bg-indigo-600 px-2 py-0.5 rounded">{catLabel(ev.category)}</span><span className="text-blue-300 text-sm">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span></div>
+                    <div className="flex items-center gap-3"><span className="text-xs bg-green-600 px-2 py-1 rounded-full">{done}/{tasks.length} done</span><span className="text-blue-300">{isExp?"▲":"▼"}</span></div>
                   </button>
                   {isExp&&(
                     <div>
@@ -446,17 +463,18 @@ export default function App() {
         {/* COLLATERAL */}
         {tab==="collateral"&&(
           <div>
-            <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Collateral & Creative Tracker</h2><p className="text-xs text-gray-500">Upload reference artwork or link to Drive. 📱 = Meta/SEM ad creative. All items need Tania approval before print/publish/launch.</p></div>
+            <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Collateral & Creative Tracker</h2><p className="text-xs text-gray-500">Each event shows the collateral for its category. 📱 = Meta/SEM ad. Tania approval before publish.</p></div>
             {events.length===0&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center text-gray-500">Add an event in the Event Master tab.</div>}
             {events.map((ev,ei)=>{
               const evKey=`coll-${ev.id}`, isExp=expandedEvents[evKey]!==false
-              const done=COLLATERAL_ITEMS.filter((_,idx)=>["Done","Approved"].includes(collStatus[`${ev.id}-${idx}`])).length
+              const items=getCollateral(ev.category)
+              const done=items.filter((_,idx)=>["Done","Approved"].includes(collStatus[`${ev.id}-${idx}`])).length
               const masterFolder=(artwork[ev.id]&&artwork[ev.id].masterFolder)||""
               return(
                 <div key={ev.id} className="mb-6 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                   <button onClick={()=>togEv(evKey)} className="w-full bg-teal-800 text-white px-5 py-4 flex items-center justify-between hover:bg-teal-700">
-                    <div className="flex items-center gap-3"><span className="text-xs bg-teal-600 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold">{ev.name}</span><span className="text-teal-300 text-sm">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span></div>
-                    <div className="flex items-center gap-3"><span className="text-xs bg-green-600 px-2 py-1 rounded-full">{done}/{COLLATERAL_ITEMS.length} approved</span><span className="text-teal-300">{isExp?"▲":"▼"}</span></div>
+                    <div className="flex items-center gap-3 flex-wrap"><span className="text-xs bg-teal-600 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold">{ev.name}</span><span className="text-xs bg-indigo-600 px-2 py-0.5 rounded">{catLabel(ev.category)}</span><span className="text-teal-300 text-sm">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span></div>
+                    <div className="flex items-center gap-3"><span className="text-xs bg-green-600 px-2 py-1 rounded-full">{done}/{items.length} approved</span><span className="text-teal-300">{isExp?"▲":"▼"}</span></div>
                   </button>
                   {isExp&&(
                     <div>
@@ -469,9 +487,9 @@ export default function App() {
                         <table className="w-full min-w-[1100px]">
                           <thead><tr className="bg-gray-50 text-xs text-gray-500 font-semibold"><th className="px-3 py-2 text-left">#</th><th className="px-3 py-2 text-left">Item</th><th className="px-3 py-2 text-center">Type</th><th className="px-3 py-2 text-center">📱 Ad</th><th className="px-3 py-2 text-center">Design By</th><th className="px-3 py-2 text-center">Publish By</th><th className="px-3 py-2 text-center">Owner</th><th className="px-3 py-2 text-center">Approved</th><th className="px-3 py-2 text-center w-32">Status</th><th className="px-3 py-2 text-center">Artwork</th><th className="px-3 py-2 text-left">Notes</th></tr></thead>
                           <tbody>
-                            {COLLATERAL_ITEMS.map((item,idx)=>{
+                            {items.map((item,idx)=>{
                               const sk=`${ev.id}-${idx}`, status=collStatus[sk]||"Not Started"
-                              const designDate=addDays(ev.startDate,item.designOff), pubDate=item.pubOff!==null?addDays(ev.startDate,item.pubOff):null
+                              const designDate=addDays(ev.startDate,item.designOff), pubDate=item.pubOff!==null&&item.pubOff!==undefined?addDays(ev.startDate,item.pubOff):null
                               const flagged=!!metaFlag[sk], alt=idx%2===1
                               return(
                                 <tr key={idx} className={`border-t border-gray-100 ${item.meta?"bg-purple-50":alt?"bg-blue-50":"bg-white"} hover:bg-yellow-50`}>
