@@ -128,6 +128,7 @@ export default function App() {
   const [form,setForm]=useState(blank())
   const [expandedPhases,setExpandedPhases]=useState({})
   const [expandedEvents,setExpandedEvents]=useState({})
+  const [showSkipped,setShowSkipped]=useState({})
 
   function blank(){return{name:"",category:"",startDate:"",endDate:"",goLiveDate:"",venue:"",status:"Confirmed",salesLead:"Neshah (NSH)",marketingLead:"Tania (TD)",heroOffer:"",vendors:"",notes:"",objective:"",audience:"",sellingPoint:"",cta:"",leadDest:"",bookingDeadline:""}}
 
@@ -182,7 +183,7 @@ export default function App() {
   const totalTasks = events.reduce((s,ev)=>s+getTasks(ev.category).length,0)
 
   const TABS=[{id:"events",label:"📋 Event Master"},{id:"brief",label:"📣 Brief & Planner"},{id:"timeline",label:"📅 Timeline"},{id:"collateral",label:"🎨 Collateral & Creative"}]
-  const FORM_FIELDS=[["Event Name *","name","text","e.g. The Wedding Upmarket @ Suntec"],["Start / Event Date *","startDate","date",""],["End Date","endDate","date","Same as start for single-day"],["Campaign Go-Live Date","goLiveDate","date","Auto-recommended as 4 weeks before event"],["Type","type","text","e.g. Wedding Showcase / Open House"],["Venue / Hall","venue","text","e.g. Royal Hall, Bukit Timah"],["Sales Lead","salesLead","text","e.g. Neshah (NSH)"],["Marketing Lead","marketingLead","text","e.g. Tania (TD)"],["Hero Offer / Showcase Perk","heroOffer","text","e.g. Free décor upgrade + bonus yuu Points"],["Partner Vendors","vendors","text","e.g. florist, media team, bridal partners"]]
+  const FORM_FIELDS=[["Event Name *","name","text","e.g. The Wedding Upmarket @ Suntec"],["Start / Event Date *","startDate","date",""],["End Date","endDate","date","Same as start for single-day"],["Campaign Go-Live Date","goLiveDate","date","Auto-recommended as 4 weeks before event"],["Venue / Hall","venue","text","e.g. Royal Hall, Bukit Timah"],["Sales Lead","salesLead","text","e.g. Neshah (NSH)"],["Marketing Lead","marketingLead","text","e.g. Tania (TD)"],["Hero Offer / Showcase Perk","heroOffer","text","e.g. Free décor upgrade + bonus yuu Points"],["Partner Vendors","vendors","text","e.g. florist, media team, bridal partners"]]
   const BRIEF_FIELDS=[["Target Audience","audience","e.g. Newly engaged Muslim couples planning 2027"],["Main Selling Point","sellingPoint","e.g. All-inclusive halal package, venue + catering + décor"],["Call-to-Action","cta","e.g. RSVP for the showcase / WhatsApp to enquire"],["Lead Destination","leadDest","e.g. Meta lead form → GHL / WhatsApp / RSVP landing page"],["Booking Deadline / Validity","bookingDeadline","e.g. Event-only perk; deposit by 31 Aug 2026"]]
 
   return (
@@ -235,7 +236,7 @@ export default function App() {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4">
-                      {[["Type",ev.type||"—"],["Venue",ev.venue||"—"],["Sales Lead",ev.salesLead||"—"],["Marketing Lead",ev.marketingLead||"—"],["Hero Offer",ev.heroOffer||"—"],["Partner Vendors",ev.vendors||"—"],["Objective",ev.objective||"—"],["Booking deadline",ev.bookingDeadline||"—"]].map(([l,v])=>(
+                      {[["Category",catLabel(ev.category)],["Venue",ev.venue||"—"],["Sales Lead",ev.salesLead||"—"],["Marketing Lead",ev.marketingLead||"—"],["Hero Offer",ev.heroOffer||"—"],["Partner Vendors",ev.vendors||"—"],["Objective",ev.objective||"—"],["Booking deadline",ev.bookingDeadline||"—"]].map(([l,v])=>(
                         <div key={l}><div className="text-xs text-gray-400 font-medium">{l}</div><div className="text-sm text-gray-800 mt-0.5">{v}</div></div>
                       ))}
                       {ev.notes&&<div className="col-span-2 md:col-span-4"><div className="text-xs text-gray-400 font-medium">Notes</div><div className="text-sm text-gray-800 mt-0.5">{ev.notes}</div></div>}
