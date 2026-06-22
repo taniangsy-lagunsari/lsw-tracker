@@ -435,7 +435,7 @@ export default function App() {
             <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Brief & Lead-Time Planner</h2><p className="text-xs text-gray-500">Counts back from the campaign go-live date (or event date if none is set).</p></div>
             {events.length===0&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center text-gray-500">Add an event in the Event Master tab.</div>}
             {events.map((ev,ei)=>{
-              const evKey=`brief-${ev.id}`, isExp=expandedEvents[evKey]!==false
+              const evKey=`brief-${ev.id}`, isExp=!!expandedEvents[evKey]
               const missing=[["Objective",ev.objective],["Audience",ev.audience],["Selling point",ev.sellingPoint],["CTA",ev.cta],["Lead destination",ev.leadDest]].filter(([,v])=>!v).map(([l])=>l)
               const refDate=ev.goLiveDate||ev.startDate, refLabel=ev.goLiveDate?"go-live date":"event date"
               const maxLead=Math.max(...LEAD_TIMES.map(r=>r.leadDays))
@@ -460,28 +460,12 @@ export default function App() {
                         </div>
                       ):<div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">Set an event date in the Event Master tab to calculate brief dates.</div>}
                       <div>
-                        <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-gray-700">1 · Sales Brief</h3><button onClick={()=>openEdit(ev)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Edit brief</button></div>
+                        <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-gray-700">Sales Brief</h3><button onClick={()=>openEdit(ev)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Edit brief</button></div>
                         {missing.length>0&&<div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 mb-2">⚠️ Brief incomplete — still needed: {missing.join(", ")}</div>}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                           {[["Objective",ev.objective],["Target audience",ev.audience],["Main selling point",ev.sellingPoint],["Hero offer",ev.heroOffer],["Call-to-action",ev.cta],["Lead destination",ev.leadDest],["Booking deadline",ev.bookingDeadline],["Partner vendors",ev.vendors]].map(([l,v])=>(
                             <div key={l} className="bg-gray-50 border border-gray-100 rounded px-3 py-2"><span className="font-semibold text-gray-500">{l}: </span><span className={v?"text-gray-800":"text-gray-300"}>{v||"—"}</span></div>
                           ))}
-                        </div>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-gray-700 mb-2">2 · Channel Lead-Time Planner</h3>
-                        <p className="text-xs text-gray-400 mb-2">Counted back from the {refLabel} ({refDate?fmtDate(refDate):"not set"}).</p>
-                        <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                          <table className="w-full min-w-[640px] text-xs">
-                            <thead><tr className="bg-gray-50 text-gray-500 font-semibold"><th className="px-3 py-2 text-left">Channel</th><th className="px-3 py-2 text-left">Deliverable</th><th className="px-3 py-2 text-left">SOP min</th><th className="px-3 py-2 text-center">Brief by</th><th className="px-3 py-2 text-center">Feasibility</th></tr></thead>
-                            <tbody>
-                              {LEAD_TIMES.map((row,ri)=>{
-                                const briefBy=refDate?addDays(refDate,-row.leadDays):null, d=refDate?daysFromToday(briefBy):null
-                                const feas=d===null?{label:"Set a date",cls:"bg-gray-100 text-gray-400"}:d<0?{label:`❌ Too late · ${Math.abs(d)}d past`,cls:"bg-red-100 text-red-800 font-semibold"}:d<=5?{label:`⚠️ Tight · ${d}d left`,cls:"bg-orange-100 text-orange-800 font-semibold"}:{label:`✅ On track · ${d}d left`,cls:"bg-green-100 text-green-800"}
-                                return(<tr key={ri} className={`border-t border-gray-100 ${ri%2?"bg-gray-50":"bg-white"}`}><td className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap">{row.channel}</td><td className="px-3 py-2 text-gray-700">{row.deliverable}</td><td className="px-3 py-2 text-gray-500">{row.sop}</td><td className="px-3 py-2 text-center font-semibold text-blue-800 whitespace-nowrap">{refDate?fmtDate(briefBy):"—"}</td><td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full whitespace-nowrap ${feas.cls}`}>{feas.label}</span></td></tr>)
-                              })}
-                            </tbody>
-                          </table>
                         </div>
                       </div>
                     </div>
@@ -498,7 +482,7 @@ export default function App() {
             <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Combined Marketing & Sales Timeline</h2><p className="text-xs text-gray-500">Each event shows the timeline for its category. Overdue and due-soon tasks are flagged against today.</p></div>
             {events.length===0&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center text-gray-500">No events yet — add one in the Event Master tab.</div>}
             {events.map((ev,ei)=>{
-              const evKey=`evt-${ev.id}`, isExp=expandedEvents[evKey]!==false
+              const evKey=`evt-${ev.id}`, isExp=!!expandedEvents[evKey]
               const tasks=getTasks(ev.category)
               const enriched=tasks.map((t,idx)=>{
                 const status=taskStatus[`${ev.id}-${idx}`]||"Not Started"
@@ -523,7 +507,7 @@ export default function App() {
                         const phAll=enriched.filter(t=>t.phase===phase)
                         const phVis=phAll.filter(t=>t.visible)
                         if(phVis.length===0) return null
-                        const phKey=`${ev.id}-${phase}`, phExp=expandedPhases[phKey]!==false
+                        const phKey=`${ev.id}-${phase}`, phExp=!!expandedPhases[phKey]
                         const phDone=phAll.filter(t=>t.status==="Done").length
                         return(
                           <div key={phase}>
@@ -600,7 +584,7 @@ export default function App() {
             <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Collateral & Creative Tracker</h2><p className="text-xs text-gray-500">Each event shows the collateral for its category. 📱 = Meta/SEM ad. Tania approval before publish. Publish dates flag overdue/due-soon.</p></div>
             {events.length===0&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center text-gray-500">Add an event in the Event Master tab.</div>}
             {events.map((ev,ei)=>{
-              const evKey=`coll-${ev.id}`, isExp=expandedEvents[evKey]!==false
+              const evKey=`coll-${ev.id}`, isExp=!!expandedEvents[evKey]
               const items=getCollateral(ev.category)
               const enriched=items.map((item,idx)=>{
                 const status=collStatus[`${ev.id}-${idx}`]||"Not Started"
