@@ -20,11 +20,14 @@ const PH_COLOUR = {
 }
 const PRI = { P1:"bg-red-100 text-red-800 font-bold", P2:"bg-orange-100 text-orange-800", P3:"bg-green-100 text-green-800" }
 const STATUS_OPTS = ["Not Started","In Progress","Done","Blocked","Urgent","N/A"]
+const STATUS_OPTS_COLL = [...STATUS_OPTS,"Approved"]
 const STATUS_COL = {
   "Not Started":"bg-gray-100 text-gray-600", "In Progress":"bg-blue-100 text-blue-800",
   "Done":"bg-green-100 text-green-800",      "Blocked":"bg-red-100 text-red-800",
   "Urgent":"bg-orange-100 text-orange-800",  "N/A":"bg-gray-50 text-gray-400",
+  "Approved":"bg-green-100 text-green-800",
 }
+const DONE_STATES = ["Done","Approved","N/A"]
 const catLabel = k => (CATEGORIES.find(c => c.key === k)?.label) || "Showcase (default)"
 
 function addDays(iso, n) { if (!iso) return null; const d = new Date(iso); d.setDate(d.getDate()+n); return d }
@@ -32,6 +35,22 @@ function fmtDate(d) { if (!d) return "—"; if (typeof d==="string") d=new Date(
 function daysFromToday(t) { if (!t) return null; const a=new Date(); a.setHours(0,0,0,0); const b=new Date(t); b.setHours(0,0,0,0); return Math.round((b-a)/86400000) }
 function isoDate(d) { if (!d) return ""; if (typeof d==="string") d=new Date(d); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}` }
 function recommendGoLive(s) { return s ? isoDate(addDays(s,-28)) : "" }
+
+// Returns overdue / due-today / due-soon info for a date, unless the task is already done/n-a.
+function dueInfo(date, status) {
+  if (!date) return null
+  if (DONE_STATES.includes(status)) return null
+  const d = daysFromToday(date)
+  if (d === null) return null
+  if (d < 0)  return { kind:"overdue", days:-d, label:`${-d}d late`,  cls:"bg-red-100 text-red-800",    dot:"bg-red-500",   accent:"border-l-red-500" }
+  if (d === 0) return { kind:"today",  days:0,  label:"due today",     cls:"bg-orange-100 text-orange-800", dot:"bg-orange-500", accent:"border-l-orange-500" }
+  if (d <= 3) return { kind:"soon",    days:d,  label:`in ${d}d`,      cls:"bg-amber-100 text-amber-800",   dot:"bg-amber-400",  accent:"border-l-amber-400" }
+  return null
+}
+function DueChip({ info }) {
+  if (!info) return null
+  return <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap font-semibold ${info.cls}`}>{info.label}</span>
+}
 
 function compressImage(file, maxDim, quality) {
   return new Promise((resolve, reject) => {
@@ -113,6 +132,14 @@ function ArtworkCell({ art={}, onUpload, onLink, onClear, onView }) {
   )
 }
 
+function StatusSelect({ value, onChange, options }) {
+  return (
+    <select value={value} onChange={e=>onChange(e.target.value)} className={`text-xs px-2 py-1 rounded border-0 cursor-pointer ${STATUS_COL[value]||""} focus:outline-none focus:ring-1 focus:ring-blue-300`}>
+      {options.map(s=><option key={s}>{s}</option>)}
+    </select>
+  )
+}
+
 export default function App() {
   const [tab,setTab]=useState("events")
   const [events,setEvents]=useState([])
@@ -129,6 +156,26 @@ export default function App() {
   const [expandedPhases,setExpandedPhases]=useState({})
   const [expandedEvents,setExpandedEvents]=useState({})
   const [showSkipped,setShowSkipped]=useState({})
+
+  // ─── Filters ───────────────────────────────────────────────────────────────
+  const [fTeams,setFTeams]=useState([])      // [] = all teams
+  const [fStatus,setFStatus]=useState("")    // "" = any status
+  const [fOwner,setFOwner]=useState("")      // free-text owner search
+  const [fOverdue,setFOverdue]=useState(false)
+  const [fMine,setFMine]=useState(false)     // Tania's tasks
+  const isFiltering = fTeams.length>0 || fStatus || fOwner.trim() || fOverdue || fMine
+  const clearFilters=()=>{setFTeams([]);setFStatus("");setFOwner("");setFOverdue(false);setFMine(false)}
+  const toggleTeam=k=>setFTeams(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k])
+
+  // A single matcher used by Timeline (team set) and Collateral (team=null).
+  function passFilters({ team=null, owner="", status="Not Started", date=null }) {
+    if (team!==null && fTeams.length && !fTeams.includes(team)) return false
+    if (fMine) { const mine = team==="TANIA" || /\bTD\b|Tania/i.test(owner); if (!mine) return false }
+    if (fStatus && status!==fStatus) return false
+    if (fOwner.trim() && !owner.toLowerCase().includes(fOwner.trim().toLowerCase())) return false
+    if (fOverdue) { const di=dueInfo(date,status); if (!di || di.kind!=="overdue") return false }
+    return true
+  }
 
   function blank(){return{name:"",category:"",startDate:"",endDate:"",goLiveDate:"",venue:"",status:"Confirmed",salesLead:"Neshah (NSH)",marketingLead:"Tania (TD)",heroOffer:"",vendors:"",notes:"",objective:"",audience:"",sellingPoint:"",cta:"",leadDest:"",bookingDeadline:""}}
 
@@ -181,6 +228,17 @@ export default function App() {
   if(!loaded) return <div className="min-h-screen flex items-center justify-center text-gray-500 text-sm">Loading tracker…</div>
 
   const totalTasks = events.reduce((s,ev)=>s+getTasks(ev.category).length,0)
+  // Overall progress + overdue across all events (timeline tasks).
+  const allDone = events.reduce((s,ev)=>{const ts=getTasks(ev.category);return s+ts.filter((_,idx)=>taskStatus[`${ev.id}-${idx}`]==="Done").length},0)
+  const overallPct = totalTasks?Math.round(allDone/totalTasks*100):0
+  const overdueTotal = events.reduce((s,ev)=>{
+    const ts=getTasks(ev.category)
+    return s+ts.filter((t,idx)=>{
+      const st=taskStatus[`${ev.id}-${idx}`]||"Not Started"
+      const di=dueInfo(ev.startDate?addDays(ev.startDate,t.offset):null, st)
+      return di&&di.kind==="overdue"
+    }).length
+  },0)
 
   const TABS=[{id:"events",label:"📋 Event Master"},{id:"brief",label:"📣 Brief & Planner"},{id:"timeline",label:"📅 Timeline"},{id:"collateral",label:"🎨 Collateral & Creative"}]
   const FORM_FIELDS=[["Event Name *","name","text","e.g. The Wedding Upmarket @ Suntec"],["Start / Event Date *","startDate","date",""],["End Date","endDate","date","Same as start for single-day"],["Campaign Go-Live Date","goLiveDate","date","Auto-recommended as 4 weeks before event"],["Venue / Hall","venue","text","e.g. Royal Hall, Bukit Timah"],["Sales Lead","salesLead","text","e.g. Neshah (NSH)"],["Marketing Lead","marketingLead","text","e.g. Tania (TD)"],["Hero Offer / Showcase Perk","heroOffer","text","e.g. Free décor upgrade + bonus yuu Points"],["Partner Vendors","vendors","text","e.g. florist, media team, bridal partners"]]
@@ -188,22 +246,50 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-sm">
-      <div className="bg-blue-900 text-white px-6 py-3 flex items-center justify-between shadow-lg">
+      <div className="bg-blue-900 text-white px-4 sm:px-6 py-3 flex items-center justify-between gap-3 flex-wrap shadow-lg">
         <div><div className="text-xs text-blue-300 font-medium tracking-wide">LAGUN SARI WEDDINGS & EVENTS</div><div className="text-lg font-bold">✿ Showcase & Events Tracker</div></div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {overdueTotal>0&&(
+            <button onClick={()=>{setTab("timeline");setFOverdue(true)}} className="text-xs px-2 py-1 rounded-full bg-red-500 hover:bg-red-400 font-semibold" title="Show only overdue tasks">⏰ {overdueTotal} overdue</button>
+          )}
+          <div className="flex items-center gap-2 bg-blue-800 px-2 py-1 rounded">
+            <span className="text-xs whitespace-nowrap">{allDone}/{totalTasks} done</span>
+            <div className="w-16 h-1.5 bg-blue-950 rounded-full overflow-hidden"><div className="h-full bg-green-500" style={{width:`${overallPct}%`}}/></div>
+            <span className="text-xs font-semibold">{overallPct}%</span>
+          </div>
           <span className={`text-xs px-2 py-1 rounded-full ${saving?"bg-amber-500":"bg-green-600"}`}>{saving?"Saving…":"✓ Saved"}</span>
-          <span className="text-xs bg-blue-700 px-2 py-1 rounded">{events.length} event{events.length!==1?"s":""} · {totalTasks} tasks tracked</span>
+          <span className="text-xs bg-blue-700 px-2 py-1 rounded">{events.length} event{events.length!==1?"s":""}</span>
         </div>
       </div>
-      <div className="bg-blue-800 text-white px-6 py-2 flex flex-wrap gap-4 text-xs">
-        {Object.entries(TEAM).map(([k,v])=><span key={k} className={`px-2 py-0.5 rounded-full ${v.badge}`}>{v.label}</span>)}
+      <div className="bg-blue-800 text-white px-4 sm:px-6 py-2 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-blue-300 mr-1 hidden sm:inline">Team filter:</span>
+        {Object.entries(TEAM).map(([k,v])=>{
+          const active=fTeams.includes(k)
+          return <button key={k} onClick={()=>toggleTeam(k)} title="Click to filter timeline by team" className={`px-2 py-0.5 rounded-full transition ${v.badge} ${active?"ring-2 ring-white ring-offset-1 ring-offset-blue-800":fTeams.length?"opacity-40 hover:opacity-70":"hover:opacity-90"}`}>{v.label}</button>
+        })}
         <span className="text-blue-300 ml-2">Priority: 🔴P1 = Critical  🟠P2 = Important</span>
       </div>
-      <div className="bg-white border-b border-gray-200 px-4 flex gap-1 sticky top-0 z-20 shadow-sm">
-        {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${tab===t.id?"border-blue-800 text-blue-900":"border-transparent text-gray-500 hover:text-gray-800"}`}>{t.label}</button>)}
+      <div className="bg-white border-b border-gray-200 px-2 sm:px-4 flex gap-1 sticky top-0 z-20 shadow-sm overflow-x-auto">
+        {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={`px-3 sm:px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${tab===t.id?"border-blue-800 text-blue-900":"border-transparent text-gray-500 hover:text-gray-800"}`}>{t.label}</button>)}
       </div>
 
-      <div className="max-w-screen-2xl mx-auto px-4 py-4">
+      <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 py-4">
+
+        {/* FILTER BAR (Timeline + Collateral) */}
+        {(tab==="timeline"||tab==="collateral")&&(
+          <div className="flex flex-wrap items-center gap-2 mb-4 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs shadow-sm">
+            <span className="font-semibold text-gray-500">🔎 Filter</span>
+            <input value={fOwner} onChange={e=>setFOwner(e.target.value)} placeholder="Owner (NSH, CI, TD…)" className="border border-gray-300 rounded px-2 py-1 text-xs w-40 focus:outline-none focus:ring-1 focus:ring-blue-400"/>
+            <select value={fStatus} onChange={e=>setFStatus(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <option value="">All statuses</option>
+              {STATUS_OPTS_COLL.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <button onClick={()=>setFOverdue(v=>!v)} className={`px-2 py-1 rounded-full font-semibold ${fOverdue?"bg-red-600 text-white":"bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600"}`}>⏰ Overdue only</button>
+            <button onClick={()=>setFMine(v=>!v)} className={`px-2 py-1 rounded-full font-semibold ${fMine?"bg-amber-500 text-white":"bg-gray-100 text-gray-500 hover:bg-amber-50 hover:text-amber-700"}`}>🟡 My tasks</button>
+            {tab==="timeline"&&<span className="text-gray-300 hidden sm:inline">· team chips above filter too</span>}
+            {isFiltering&&<button onClick={clearFilters} className="ml-auto px-2 py-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300">Clear ✕</button>}
+          </div>
+        )}
 
         {/* EVENT MASTER */}
         {tab==="events"&&(
@@ -219,6 +305,8 @@ export default function App() {
                 const tasks=getTasks(ev.category)
                 const done=tasks.filter((_,idx)=>taskStatus[`${ev.id}-${idx}`]==="Done").length
                 const pct=tasks.length?Math.round((done/tasks.length)*100):0
+                const evOverdue=tasks.filter((t,idx)=>{const st=taskStatus[`${ev.id}-${idx}`]||"Not Started";const di=dueInfo(ev.startDate?addDays(ev.startDate,t.offset):null,st);return di&&di.kind==="overdue"}).length
+                const evSoon=tasks.filter((t,idx)=>{const st=taskStatus[`${ev.id}-${idx}`]||"Not Started";const di=dueInfo(ev.startDate?addDays(ev.startDate,t.offset):null,st);return di&&(di.kind==="today"||di.kind==="soon")}).length
                 return(
                   <div key={ev.id} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                     <div className="bg-blue-900 text-white px-4 py-3 flex items-center justify-between flex-wrap gap-2">
@@ -230,6 +318,8 @@ export default function App() {
                         {ev.goLiveDate&&<span className="text-xs bg-blue-700 px-2 py-0.5 rounded">Go-live: {fmtDate(ev.goLiveDate)}</span>}
                       </div>
                       <div className="flex items-center gap-2">
+                        {evOverdue>0&&<button onClick={()=>{setTab("timeline");setFOverdue(true)}} className="text-xs px-2 py-0.5 rounded-full bg-red-500 hover:bg-red-400 font-semibold" title="View overdue on Timeline">⏰ {evOverdue} overdue</button>}
+                        {evOverdue===0&&evSoon>0&&<span className="text-xs px-2 py-0.5 rounded-full bg-amber-400 text-amber-900 font-semibold" title="Tasks due within 3 days">⏳ {evSoon} due soon</span>}
                         <span className={`text-xs px-2 py-0.5 rounded-full ${ev.status==="Confirmed"?"bg-green-100 text-green-800":ev.status==="Completed"?"bg-gray-200 text-gray-600":ev.status==="Cancelled"?"bg-red-100 text-red-700":"bg-amber-100 text-amber-800"}`}>{ev.status}</span>
                         <button onClick={()=>openEdit(ev)} className="text-xs bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded">Edit</button>
                         <button onClick={()=>deleteEvent(ev.id)} className="text-xs bg-red-700 hover:bg-red-600 px-3 py-1 rounded">Delete</button>
@@ -372,7 +462,7 @@ export default function App() {
                         <h3 className="text-sm font-bold text-gray-700 mb-2">2 · Channel Lead-Time Planner</h3>
                         <p className="text-xs text-gray-400 mb-2">Counted back from the {refLabel} ({refDate?fmtDate(refDate):"not set"}).</p>
                         <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                          <table className="w-full min-w-[760px] text-xs">
+                          <table className="w-full min-w-[640px] text-xs">
                             <thead><tr className="bg-gray-50 text-gray-500 font-semibold"><th className="px-3 py-2 text-left">Channel</th><th className="px-3 py-2 text-left">Deliverable</th><th className="px-3 py-2 text-left">SOP min</th><th className="px-3 py-2 text-center">Brief by</th><th className="px-3 py-2 text-center">Feasibility</th></tr></thead>
                             <tbody>
                               {LEAD_TIMES.map((row,ri)=>{
@@ -395,59 +485,92 @@ export default function App() {
         {/* TIMELINE */}
         {tab==="timeline"&&(
           <div>
-            <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Combined Marketing & Sales Timeline</h2><p className="text-xs text-gray-500">Each event shows the timeline for its category.</p></div>
+            <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Combined Marketing & Sales Timeline</h2><p className="text-xs text-gray-500">Each event shows the timeline for its category. Overdue and due-soon tasks are flagged against today.</p></div>
             {events.length===0&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center text-gray-500">No events yet — add one in the Event Master tab.</div>}
             {events.map((ev,ei)=>{
               const evKey=`evt-${ev.id}`, isExp=expandedEvents[evKey]!==false
               const tasks=getTasks(ev.category)
-              const tasksByPhase={}
-              tasks.forEach((t,i)=>{(tasksByPhase[t.phase]=tasksByPhase[t.phase]||[]).push({...t,idx:i})})
-              const done=tasks.filter((_,idx)=>taskStatus[`${ev.id}-${idx}`]==="Done").length
+              const enriched=tasks.map((t,idx)=>{
+                const status=taskStatus[`${ev.id}-${idx}`]||"Not Started"
+                const date=ev.startDate?addDays(ev.startDate,t.offset):null
+                const di=dueInfo(date,status)
+                return {...t,idx,status,date,di,visible:passFilters({team:t.team,owner:t.owner,status,date})}
+              })
+              const done=enriched.filter(t=>t.status==="Done").length
+              const evOverdue=enriched.filter(t=>t.di&&t.di.kind==="overdue").length
+              const visList=enriched.filter(t=>t.visible)
+              const phaseOrder=[]; enriched.forEach(t=>{if(!phaseOrder.includes(t.phase))phaseOrder.push(t.phase)})
               return(
                 <div key={ev.id} className="mb-6 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                  <button onClick={()=>togEv(evKey)} className="w-full bg-blue-900 text-white px-5 py-4 flex items-center justify-between hover:bg-blue-800">
-                    <div className="flex items-center gap-3 flex-wrap"><span className="text-xs bg-blue-700 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold text-base">{ev.name}</span><span className="text-xs bg-indigo-600 px-2 py-0.5 rounded">{catLabel(ev.category)}</span><span className="text-blue-300 text-sm">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span></div>
-                    <div className="flex items-center gap-3"><span className="text-xs bg-green-600 px-2 py-1 rounded-full">{done}/{tasks.length} done</span><span className="text-blue-300">{isExp?"▲":"▼"}</span></div>
+                  <button onClick={()=>togEv(evKey)} className="w-full bg-blue-900 text-white px-4 sm:px-5 py-4 flex items-center justify-between gap-2 hover:bg-blue-800">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap text-left"><span className="text-xs bg-blue-700 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold text-sm sm:text-base">{ev.name}</span><span className="text-xs bg-indigo-600 px-2 py-0.5 rounded hidden sm:inline">{catLabel(ev.category)}</span><span className="text-blue-300 text-xs sm:text-sm">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span></div>
+                    <div className="flex items-center gap-2"><span className="text-xs bg-green-600 px-2 py-1 rounded-full whitespace-nowrap">{done}/{tasks.length} done</span>{evOverdue>0&&<span className="text-xs bg-red-500 px-2 py-1 rounded-full whitespace-nowrap font-semibold">⏰ {evOverdue}</span>}<span className="text-blue-300">{isExp?"▲":"▼"}</span></div>
                   </button>
                   {isExp&&(
                     <div>
-                      {Object.entries(tasksByPhase).map(([phase,phaseTasks])=>{
+                      {isFiltering&&visList.length===0&&<div className="px-5 py-4 text-xs text-gray-400 bg-gray-50">No tasks match the current filters for this event.</div>}
+                      {phaseOrder.map(phase=>{
+                        const phAll=enriched.filter(t=>t.phase===phase)
+                        const phVis=phAll.filter(t=>t.visible)
+                        if(phVis.length===0) return null
                         const phKey=`${ev.id}-${phase}`, phExp=expandedPhases[phKey]!==false
-                        const phDone=phaseTasks.filter(t=>taskStatus[`${ev.id}-${t.idx}`]==="Done").length
+                        const phDone=phAll.filter(t=>t.status==="Done").length
                         return(
                           <div key={phase}>
-                            <button onClick={()=>togPh(phKey)} className={`w-full ${PH_COLOUR[phase]||"bg-gray-700"} text-white px-5 py-2.5 flex items-center justify-between hover:opacity-90`}>
+                            <button onClick={()=>togPh(phKey)} className={`w-full ${PH_COLOUR[phase]||"bg-gray-700"} text-white px-4 sm:px-5 py-2.5 flex items-center justify-between hover:opacity-90`}>
                               <span className="font-semibold text-sm">▶ {phase.toUpperCase()}</span>
-                              <span className="text-xs opacity-75">{phDone}/{phaseTasks.length} done {phExp?"▲":"▼"}</span>
+                              <span className="text-xs opacity-75">{phDone}/{phAll.length} done{isFiltering&&phVis.length!==phAll.length?` · ${phVis.length} shown`:""} {phExp?"▲":"▼"}</span>
                             </button>
                             {phExp&&(
-                              <div className="overflow-x-auto">
-                                <table className="w-full min-w-[1100px]">
-                                  <thead><tr className="bg-gray-50 text-xs text-gray-500 font-semibold"><th className="px-3 py-2 text-left w-20">Timing</th><th className="px-3 py-2 text-left w-28">Date</th><th className="px-3 py-2 text-left w-24">Team</th><th className="px-3 py-2 text-left">Task</th><th className="px-3 py-2 text-left w-28">Owner</th><th className="px-3 py-2 text-left w-16">Pri</th><th className="px-3 py-2 text-center w-32">Status</th><th className="px-3 py-2 text-left w-44">Notes</th></tr></thead>
-                                  <tbody>
-                                    {phaseTasks.map((t,ti)=>{
-                                      const sk=`${ev.id}-${t.idx}`, status=taskStatus[sk]||"Not Started"
-                                      const targetDate=t.label==="Event"?new Date(ev.startDate):addDays(ev.startDate,t.offset)
-                                      const team=TEAM[t.team]||TEAM.BOTH, alt=ti%2===1
-                                      return(
-                                        <tr key={t.idx} className={`border-t border-gray-100 ${alt?team.bg:"bg-white"} hover:bg-yellow-50`}>
-                                          <td className="px-3 py-2.5 text-xs font-mono text-gray-600 whitespace-nowrap">{t.label}</td>
-                                          <td className="px-3 py-2.5 text-xs font-semibold text-blue-800 whitespace-nowrap">{ev.startDate?fmtDate(targetDate):<span className="text-gray-400 italic">Set date</span>}</td>
-                                          <td className="px-3 py-2.5"><span className={`text-xs px-1.5 py-0.5 rounded-full ${team.badge}`}>{team.label}</span></td>
-                                          <td className="px-3 py-2.5 text-xs text-gray-800 font-medium min-w-[280px]">{t.task}{t.depends&&t.depends!=="—"&&<div className="text-gray-400 font-normal mt-0.5">↳ {t.depends}</div>}</td>
-                                          <td className="px-3 py-2.5 text-xs font-semibold text-gray-700 whitespace-nowrap">{t.owner}</td>
-                                          <td className="px-3 py-2.5"><span className={`text-xs px-1.5 py-0.5 rounded ${PRI[t.priority]||""}`}>{t.priority}</span></td>
-                                          <td className="px-3 py-2.5 text-center">
-                                            <select value={status} onChange={e=>setTS(sk,e.target.value)} className={`text-xs px-2 py-1 rounded border-0 cursor-pointer ${STATUS_COL[status]||""} focus:outline-none`}>
-                                              {STATUS_OPTS.map(s=><option key={s}>{s}</option>)}
-                                            </select>
-                                          </td>
-                                          <td className="px-3 py-2.5 text-xs text-gray-400 max-w-[160px]">{t.notes}</td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </tbody>
-                                </table>
+                              <div>
+                                {/* Desktop table */}
+                                <div className="hidden md:block overflow-x-auto">
+                                  <table className="w-full min-w-[860px] table-auto">
+                                    <thead><tr className="bg-gray-50 text-xs text-gray-500 font-semibold"><th className="px-3 py-2 text-left w-20">Timing</th><th className="px-3 py-2 text-left w-32">Date</th><th className="px-3 py-2 text-left w-24">Team</th><th className="px-3 py-2 text-left">Task</th><th className="px-3 py-2 text-left w-28">Owner</th><th className="px-3 py-2 text-left w-14">Pri</th><th className="px-3 py-2 text-center w-32">Status</th><th className="px-3 py-2 text-left w-52">Notes</th></tr></thead>
+                                    <tbody>
+                                      {phVis.map((t,ti)=>{
+                                        const sk=`${ev.id}-${t.idx}`, team=TEAM[t.team]||TEAM.BOTH, alt=ti%2===1
+                                        return(
+                                          <tr key={t.idx} className={`border-t border-gray-100 align-top ${t.di?`border-l-4 ${t.di.accent}`:""} ${alt?team.bg:"bg-white"} hover:bg-yellow-50`}>
+                                            <td className="px-3 py-2.5 text-xs font-mono text-gray-600 whitespace-nowrap">{t.label}</td>
+                                            <td className="px-3 py-2.5 text-xs font-semibold text-blue-800"><div className="flex items-center flex-wrap gap-y-1">{ev.startDate?fmtDate(t.date):<span className="text-gray-400 italic">Set date</span>}<DueChip info={t.di}/></div></td>
+                                            <td className="px-3 py-2.5"><span className={`text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap ${team.badge}`}>{team.label}</span></td>
+                                            <td className="px-3 py-2.5 text-xs text-gray-800 font-medium">{t.task}{t.depends&&t.depends!=="—"&&<div className="text-gray-400 font-normal mt-0.5">↳ {t.depends}</div>}</td>
+                                            <td className="px-3 py-2.5 text-xs font-semibold text-gray-700 whitespace-nowrap">{t.owner}</td>
+                                            <td className="px-3 py-2.5"><span className={`text-xs px-1.5 py-0.5 rounded ${PRI[t.priority]||""}`}>{t.priority}</span></td>
+                                            <td className="px-3 py-2.5 text-center"><StatusSelect value={t.status} onChange={v=>setTS(sk,v)} options={STATUS_OPTS}/></td>
+                                            <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-normal break-words">{t.notes}</td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                {/* Mobile cards */}
+                                <div className="md:hidden divide-y divide-gray-100">
+                                  {phVis.map(t=>{
+                                    const sk=`${ev.id}-${t.idx}`, team=TEAM[t.team]||TEAM.BOTH
+                                    return(
+                                      <div key={t.idx} className={`p-3 ${t.di?`border-l-4 ${t.di.accent}`:""} ${team.bg}`}>
+                                        <div className="flex items-center justify-between gap-2 mb-1">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${team.badge}`}>{team.label}</span>
+                                            <span className={`text-xs px-1.5 py-0.5 rounded ${PRI[t.priority]||""}`}>{t.priority}</span>
+                                            <span className="text-xs font-mono text-gray-500">{t.label}</span>
+                                          </div>
+                                          <StatusSelect value={t.status} onChange={v=>setTS(sk,v)} options={STATUS_OPTS}/>
+                                        </div>
+                                        <div className="text-sm text-gray-800 font-medium">{t.task}</div>
+                                        {t.depends&&t.depends!=="—"&&<div className="text-xs text-gray-400 mt-0.5">↳ {t.depends}</div>}
+                                        <div className="flex items-center justify-between gap-2 mt-1.5 text-xs">
+                                          <span className="font-semibold text-blue-800 flex items-center">{ev.startDate?fmtDate(t.date):<span className="text-gray-400 italic">Set date</span>}<DueChip info={t.di}/></span>
+                                          <span className="font-semibold text-gray-600">{t.owner}</span>
+                                        </div>
+                                        {t.notes&&<div className="text-xs text-gray-500 mt-1">{t.notes}</div>}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
                               </div>
                             )}
                           </div>
@@ -464,18 +587,27 @@ export default function App() {
         {/* COLLATERAL */}
         {tab==="collateral"&&(
           <div>
-            <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Collateral & Creative Tracker</h2><p className="text-xs text-gray-500">Each event shows the collateral for its category. 📱 = Meta/SEM ad. Tania approval before publish.</p></div>
+            <div className="mb-4"><h2 className="text-lg font-bold text-blue-900">Collateral & Creative Tracker</h2><p className="text-xs text-gray-500">Each event shows the collateral for its category. 📱 = Meta/SEM ad. Tania approval before publish. Publish dates flag overdue/due-soon.</p></div>
             {events.length===0&&<div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center text-gray-500">Add an event in the Event Master tab.</div>}
             {events.map((ev,ei)=>{
               const evKey=`coll-${ev.id}`, isExp=expandedEvents[evKey]!==false
               const items=getCollateral(ev.category)
-              const done=items.filter((_,idx)=>["Done","Approved"].includes(collStatus[`${ev.id}-${idx}`])).length
+              const enriched=items.map((item,idx)=>{
+                const status=collStatus[`${ev.id}-${idx}`]||"Not Started"
+                const designDate=ev.startDate?addDays(ev.startDate,item.designOff):null
+                const pubDate=item.pubOff!==null&&item.pubOff!==undefined&&ev.startDate?addDays(ev.startDate,item.pubOff):null
+                const di=dueInfo(pubDate,status)
+                return {...item,idx,status,designDate,pubDate,di,visible:passFilters({team:null,owner:item.owner,status,date:pubDate})}
+              })
+              const done=enriched.filter(t=>["Done","Approved"].includes(t.status)).length
+              const evOverdue=enriched.filter(t=>t.di&&t.di.kind==="overdue").length
+              const vis=enriched.filter(t=>t.visible)
               const masterFolder=(artwork[ev.id]&&artwork[ev.id].masterFolder)||""
               return(
                 <div key={ev.id} className="mb-6 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                  <button onClick={()=>togEv(evKey)} className="w-full bg-teal-800 text-white px-5 py-4 flex items-center justify-between hover:bg-teal-700">
-                    <div className="flex items-center gap-3 flex-wrap"><span className="text-xs bg-teal-600 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold">{ev.name}</span><span className="text-xs bg-indigo-600 px-2 py-0.5 rounded">{catLabel(ev.category)}</span><span className="text-teal-300 text-sm">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span></div>
-                    <div className="flex items-center gap-3"><span className="text-xs bg-green-600 px-2 py-1 rounded-full">{done}/{items.length} approved</span><span className="text-teal-300">{isExp?"▲":"▼"}</span></div>
+                  <button onClick={()=>togEv(evKey)} className="w-full bg-teal-800 text-white px-4 sm:px-5 py-4 flex items-center justify-between gap-2 hover:bg-teal-700">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap text-left"><span className="text-xs bg-teal-600 px-2 py-0.5 rounded">Event {ei+1}</span><span className="font-bold text-sm sm:text-base">{ev.name}</span><span className="text-xs bg-indigo-600 px-2 py-0.5 rounded hidden sm:inline">{catLabel(ev.category)}</span><span className="text-teal-300 text-xs sm:text-sm">{ev.startDate===ev.endDate?fmtDate(ev.startDate):`${fmtDate(ev.startDate)} – ${fmtDate(ev.endDate)}`}</span></div>
+                    <div className="flex items-center gap-2"><span className="text-xs bg-green-600 px-2 py-1 rounded-full whitespace-nowrap">{done}/{items.length} approved</span>{evOverdue>0&&<span className="text-xs bg-red-500 px-2 py-1 rounded-full whitespace-nowrap font-semibold">⏰ {evOverdue}</span>}<span className="text-teal-300">{isExp?"▲":"▼"}</span></div>
                   </button>
                   {isExp&&(
                     <div>
@@ -484,43 +616,71 @@ export default function App() {
                         <input value={masterFolder} onChange={e=>updateArt(ev.id,"masterFolder",e.target.value)} placeholder="Paste shared Google Drive folder link" className="flex-1 min-w-0 border border-teal-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400"/>
                         {masterFolder&&<a href={masterFolder} target="_blank" rel="noreferrer" className="bg-teal-700 text-white px-3 py-1 rounded whitespace-nowrap hover:opacity-90">Open ↗</a>}
                       </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1100px]">
-                          <thead><tr className="bg-gray-50 text-xs text-gray-500 font-semibold"><th className="px-3 py-2 text-left">#</th><th className="px-3 py-2 text-left">Item</th><th className="px-3 py-2 text-center">Type</th><th className="px-3 py-2 text-center">📱 Ad</th><th className="px-3 py-2 text-center">Design By</th><th className="px-3 py-2 text-center">Publish By</th><th className="px-3 py-2 text-center">Owner</th><th className="px-3 py-2 text-center">Approved</th><th className="px-3 py-2 text-center w-32">Status</th><th className="px-3 py-2 text-center">Artwork</th><th className="px-3 py-2 text-left">Notes</th></tr></thead>
+                      {isFiltering&&vis.length===0&&<div className="px-5 py-4 text-xs text-gray-400 bg-gray-50">No collateral matches the current filters for this event.</div>}
+                      {/* Desktop table */}
+                      {vis.length>0&&<div className="hidden md:block overflow-x-auto">
+                        <table className="w-full min-w-[1040px] table-auto">
+                          <thead><tr className="bg-gray-50 text-xs text-gray-500 font-semibold"><th className="px-3 py-2 text-left w-8">#</th><th className="px-3 py-2 text-left">Item</th><th className="px-3 py-2 text-center">Type</th><th className="px-3 py-2 text-center">📱 Ad</th><th className="px-3 py-2 text-center">Design By</th><th className="px-3 py-2 text-center">Publish By</th><th className="px-3 py-2 text-center">Owner</th><th className="px-3 py-2 text-center">Approved</th><th className="px-3 py-2 text-center w-32">Status</th><th className="px-3 py-2 text-center">Artwork</th><th className="px-3 py-2 text-left w-44">Notes</th></tr></thead>
                           <tbody>
-                            {items.map((item,idx)=>{
-                              const sk=`${ev.id}-${idx}`, status=collStatus[sk]||"Not Started"
-                              const designDate=addDays(ev.startDate,item.designOff), pubDate=item.pubOff!==null&&item.pubOff!==undefined?addDays(ev.startDate,item.pubOff):null
-                              const flagged=!!metaFlag[sk], alt=idx%2===1
+                            {vis.map((item)=>{
+                              const idx=item.idx, sk=`${ev.id}-${idx}`
+                              const flagged=!!metaFlag[sk]
                               return(
-                                <tr key={idx} className={`border-t border-gray-100 ${item.meta?"bg-purple-50":alt?"bg-blue-50":"bg-white"} hover:bg-yellow-50`}>
+                                <tr key={idx} className={`border-t border-gray-100 align-top ${item.di?`border-l-4 ${item.di.accent}`:""} ${item.meta?"bg-purple-50":idx%2?"bg-blue-50":"bg-white"} hover:bg-yellow-50`}>
                                   <td className="px-3 py-2.5 text-xs text-gray-400">{idx+1}</td>
-                                  <td className="px-3 py-2.5 text-xs font-semibold text-gray-800">{item.name}{item.reuse&&<span className="ml-1 text-teal-600">★</span>}</td>
-                                  <td className="px-3 py-2.5 text-center"><span className={`text-xs px-2 py-0.5 rounded ${item.meta?"bg-purple-100 text-purple-800 font-semibold":"bg-gray-100 text-gray-600"}`}>{item.type}</span></td>
+                                  <td className="px-3 py-2.5 text-xs font-semibold text-gray-800 whitespace-normal break-words">{item.name}{item.reuse&&<span className="ml-1 text-teal-600">★</span>}</td>
+                                  <td className="px-3 py-2.5 text-center"><span className={`text-xs px-2 py-0.5 rounded whitespace-nowrap ${item.meta?"bg-purple-100 text-purple-800 font-semibold":"bg-gray-100 text-gray-600"}`}>{item.type}</span></td>
                                   <td className="px-3 py-2.5 text-center">
                                     {item.meta?<span className="text-xs bg-purple-100 text-purple-800 font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">📱 Ad creative</span>
                                     :<button onClick={()=>togMeta(sk)} className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${flagged?"bg-purple-100 text-purple-800 font-semibold":"bg-gray-100 text-gray-400 hover:bg-purple-50 hover:text-purple-600"}`}>{flagged?"📱 Also on Meta":"+ Use for Meta"}</button>}
                                   </td>
-                                  <td className="px-3 py-2.5 text-center text-xs font-semibold text-amber-700">{ev.startDate?fmtDate(designDate):"—"}</td>
-                                  <td className="px-3 py-2.5 text-center text-xs font-bold text-red-700">{ev.startDate&&pubDate?fmtDate(pubDate):"—"}</td>
-                                  <td className="px-3 py-2.5 text-center text-xs font-semibold">{item.owner}</td>
+                                  <td className="px-3 py-2.5 text-center text-xs font-semibold text-amber-700 whitespace-nowrap">{item.designDate?fmtDate(item.designDate):"—"}</td>
+                                  <td className="px-3 py-2.5 text-center text-xs font-bold whitespace-nowrap"><div className="flex items-center justify-center flex-wrap"><span className="text-red-700">{item.pubDate?fmtDate(item.pubDate):"—"}</span><DueChip info={item.di}/></div></td>
+                                  <td className="px-3 py-2.5 text-center text-xs font-semibold whitespace-nowrap">{item.owner}</td>
                                   <td className="px-3 py-2.5 text-center"><span className="text-xs bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded">TANIA</span></td>
-                                  <td className="px-3 py-2.5 text-center">
-                                    <select value={status} onChange={e=>setCS(sk,e.target.value)} className={`text-xs px-2 py-1 rounded border-0 cursor-pointer ${STATUS_COL[status]||""} focus:outline-none`}>
-                                      {[...STATUS_OPTS,"Approved"].map(s=><option key={s}>{s}</option>)}
-                                    </select>
-                                  </td>
+                                  <td className="px-3 py-2.5 text-center"><StatusSelect value={item.status} onChange={v=>setCS(sk,v)} options={STATUS_OPTS_COLL}/></td>
                                   <td className="px-3 py-2.5">
                                     <ArtworkCell art={getArt(ev.id,idx)} onUpload={(img,name)=>updateArt(ev.id,idx,{img,name})} onLink={link=>updateArt(ev.id,idx,{link})} onClear={()=>updateArt(ev.id,idx,{img:null,name:null})} onView={a=>setLightbox(a)}/>
                                   </td>
-                                  <td className="px-3 py-2.5 text-xs text-gray-400 max-w-[140px]">{item.note}</td>
+                                  <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-normal break-words">{item.note}</td>
                                 </tr>
                               )
                             })}
                           </tbody>
                         </table>
                         <div className="px-4 py-2 text-xs text-gray-400 bg-gray-50">★ = reusable · 📱 = ad creative · Prefer Drive links over uploads for performance.</div>
-                      </div>
+                      </div>}
+                      {/* Mobile cards */}
+                      {vis.length>0&&<div className="md:hidden divide-y divide-gray-100">
+                        {vis.map((item)=>{
+                          const idx=item.idx, sk=`${ev.id}-${idx}`
+                          const flagged=!!metaFlag[sk]
+                          return(
+                            <div key={idx} className={`p-3 ${item.di?`border-l-4 ${item.di.accent}`:""} ${item.meta?"bg-purple-50":"bg-white"}`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="text-sm font-semibold text-gray-800">{idx+1}. {item.name}{item.reuse&&<span className="ml-1 text-teal-600">★</span>}</div>
+                                <StatusSelect value={item.status} onChange={v=>setCS(sk,v)} options={STATUS_OPTS_COLL}/>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                <span className={`text-xs px-2 py-0.5 rounded ${item.meta?"bg-purple-100 text-purple-800 font-semibold":"bg-gray-100 text-gray-600"}`}>{item.type}</span>
+                                {item.meta?<span className="text-xs bg-purple-100 text-purple-800 font-semibold px-2 py-0.5 rounded-full">📱 Ad creative</span>
+                                  :<button onClick={()=>togMeta(sk)} className={`text-xs px-2 py-0.5 rounded-full ${flagged?"bg-purple-100 text-purple-800 font-semibold":"bg-gray-100 text-gray-400"}`}>{flagged?"📱 Also on Meta":"+ Use for Meta"}</button>}
+                                <span className="text-xs bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded">Appr: TANIA</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 mt-2 text-xs">
+                                <span className="text-amber-700 font-semibold">Design: {item.designDate?fmtDate(item.designDate):"—"}</span>
+                                <span className="font-bold text-red-700 flex items-center">Publish: {item.pubDate?fmtDate(item.pubDate):"—"}<DueChip info={item.di}/></span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 mt-1.5">
+                                <span className="text-xs font-semibold text-gray-600">Owner: {item.owner}</span>
+                                <ArtworkCell art={getArt(ev.id,idx)} onUpload={(img,name)=>updateArt(ev.id,idx,{img,name})} onLink={link=>updateArt(ev.id,idx,{link})} onClear={()=>updateArt(ev.id,idx,{img:null,name:null})} onView={a=>setLightbox(a)}/>
+                              </div>
+                              {item.note&&<div className="text-xs text-gray-500 mt-1">{item.note}</div>}
+                            </div>
+                          )
+                        })}
+                        <div className="px-4 py-2 text-xs text-gray-400 bg-gray-50">★ = reusable · 📱 = ad creative · Prefer Drive links over uploads.</div>
+                      </div>}
                     </div>
                   )}
                 </div>
