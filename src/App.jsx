@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { createClient } from '@supabase/supabase-js'
 import { OBJECTIVES, LEAD_TIMES, CATEGORIES, getTasks, getCollateral } from './data'
+import CalendarView from './Calendar'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -240,7 +241,7 @@ export default function App() {
     }).length
   },0)
 
-  const TABS=[{id:"events",label:"📋 Event Master"},{id:"brief",label:"📣 Brief & Planner"},{id:"timeline",label:"📅 Timeline"},{id:"collateral",label:"🎨 Collateral & Creative"}]
+  const TABS=[{id:"events",label:"📋 Event Master"},{id:"calendar",label:"🗓️ Calendar"},{id:"brief",label:"📣 Brief & Planner"},{id:"timeline",label:"📅 Timeline"},{id:"collateral",label:"🎨 Collateral & Creative"}]
   const FORM_FIELDS=[["Event Name *","name","text","e.g. The Wedding Upmarket @ Suntec"],["Start / Event Date *","startDate","date",""],["End Date","endDate","date","Same as start for single-day"],["Campaign Go-Live Date","goLiveDate","date","Auto-recommended as 4 weeks before event"],["Venue / Hall","venue","text","e.g. Royal Hall, Bukit Timah"],["Sales Lead","salesLead","text","e.g. Neshah (NSH)"],["Marketing Lead","marketingLead","text","e.g. Tania (TD)"],["Hero Offer / Showcase Perk","heroOffer","text","e.g. Free décor upgrade + bonus yuu Points"],["Partner Vendors","vendors","text","e.g. florist, media team, bridal partners"]]
   const BRIEF_FIELDS=[["Target Audience","audience","e.g. Newly engaged Muslim couples planning 2027"],["Main Selling Point","sellingPoint","e.g. All-inclusive halal package, venue + catering + décor"],["Call-to-Action","cta","e.g. RSVP for the showcase / WhatsApp to enquire"],["Lead Destination","leadDest","e.g. Meta lead form → GHL / WhatsApp / RSVP landing page"],["Booking Deadline / Validity","bookingDeadline","e.g. Event-only perk; deposit by 31 Aug 2026"]]
 
@@ -289,6 +290,15 @@ export default function App() {
             {tab==="timeline"&&<span className="text-gray-300 hidden sm:inline">· team chips above filter too</span>}
             {isFiltering&&<button onClick={clearFilters} className="ml-auto px-2 py-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300">Clear ✕</button>}
           </div>
+        )}
+
+        {/* CALENDAR */}
+        {tab==="calendar"&&(
+          <CalendarView
+            events={events}
+            onSelectEvent={(ev)=>{ setTab("events"); openEdit(ev) }}
+            onAddEvent={()=>{ setTab("events"); openAdd() }}
+          />
         )}
 
         {/* EVENT MASTER */}
